@@ -6,7 +6,6 @@ username = config.username
 password = config.password
 dbName = config.dbName
 
-
 def add_collection(collection_id, uid, name):
     try:
         with SSHTunnelForwarder(('starbug.cs.rit.edu', 22),

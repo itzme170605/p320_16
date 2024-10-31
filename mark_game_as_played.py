@@ -1,14 +1,20 @@
 import psycopg2
 from sshtunnel import SSHTunnelForwarder
-from datetime import datetime
+from datetime import datetime, timedelta
 import random
 
-# Retrieve credentials from environment variables
 username = ""
 password = ""
 dbName = "p320_16"
 
-def mark_as_played(user_id, game_id=None, collection_id=None, start_time=None, end_time=None):
+
+
+def random_datetime(start, end):
+    delta = end - start
+    random_seconds = random.randint(0, int(delta.total_seconds()))
+    return start + timedelta(seconds=random_seconds)
+
+def mark_as_played(user_id, game_id=None, collection_id=None):
     """
     Mark a video game as played by a user, recording the start and end times.
     If game_id is not provided, a random game from the specified collection will be chosen.
@@ -18,7 +24,6 @@ def mark_as_played(user_id, game_id=None, collection_id=None, start_time=None, e
     :param start_time: Optional start time for the play session. Defaults to current time.
     :param end_time: Optional end time for the play session.
     """
-    start_time = start_time or datetime.now()
     
     try:
         with SSHTunnelForwarder(('starbug.cs.rit.edu', 22),
@@ -41,13 +46,19 @@ def mark_as_played(user_id, game_id=None, collection_id=None, start_time=None, e
             print("Database connection established")
 
             # If game_id is not provided but collection_id is, choose a random game from the collection
+            
+            start_date = datetime(2018, 1, 1, 0, 0, 0)  # Earliest play session start
+            end_date = datetime.now()  # Latest possible end time
+            start_time = random_datetime(start_date, end_date)
+            end_time = random_datetime(start_time, end_date)
+                
             if game_id is None and collection_id is not None:
                 random_game_query = """
                     SELECT gameid
                     FROM games_in_collection
                     WHERE collectionid = %s;
                 """
-                curs.execute(random_game_query, (collection_id,))
+                curs.execute(random_game_query, (collection_id))
                 games = curs.fetchall()
 
                 if not games:
@@ -62,14 +73,35 @@ def mark_as_played(user_id, game_id=None, collection_id=None, start_time=None, e
                 print("No game_id or valid collection_id provided.")
                 return
 
-            # Insert the play session record
-            insert_query = """
+            # Check if the user has played the game previously
+            query = f"""
+                select * from user_plays_video_games upvg where upvg.userid = {user_id} and upvg.gameid = {game_id}
+            """
+            curs.execute(query)
+            results = curs.fetchall()
+
+            if len(results) > 0:
+                # Update existing play session
+                print("Updating existing play session")
+                update_query = """
+                    UPDATE user_plays_video_games 
+                    SET start_time = %s, end_time = %s 
+                    WHERE userid = %s AND gameid = %s;
+                """
+                curs.execute(update_query, (start_time, end_time, user_id, game_id))
+                print(f"Play session updated for user {user_id} with game {game_id}.")
+            else:
+                # insert
+                print("reached insert")
+                insert_query = """
                 INSERT INTO user_plays_video_games (userid, gameid, start_time, end_time)
                 VALUES (%s, %s, %s, %s);
             """
-            curs.execute(insert_query, (user_id, game_id, start_time, end_time))
-            conn.commit()
-            print(f"Play session recorded for user {user_id} with game {game_id}.")
+                curs.execute(insert_query, (user_id, game_id, start_time, end_time))
+
+                print(f"Play session recorded for user {user_id} with game {game_id}.")
+            
+            conn.commit()            
 
     except psycopg2.OperationalError as oe:
         print(f"Database connection error: {oe}")
@@ -81,7 +113,4 @@ def mark_as_played(user_id, game_id=None, collection_id=None, start_time=None, e
             print("Database connection closed.")
 
 # Example usage for an individual game
-mark_as_played(user_id=123, game_id=456)
-
-# Example usage for a random game from a collection
-mark_as_played(user_id=123, collection_id=789)
+mark_as_played(user_id=1, game_id=160)

@@ -8,6 +8,9 @@ dbName = "p320_16"
 def search_users_by_email(search_email, user_id):
     """
     Search for new users to follow by email.
+
+    @param search_email: Search for a user by this email
+    @param user_id: User ID of the user
     """
     try:
         with SSHTunnelForwarder(('starbug.cs.rit.edu', 22),
@@ -29,7 +32,6 @@ def search_users_by_email(search_email, user_id):
             curs = conn.cursor()
             print("Database connection established")
 
-            # Use 'uid' in the join to match the foreign key column in the email table
             sql_query = """
                 SELECT u.userid, u.username, e.email
                 FROM users u
@@ -61,6 +63,9 @@ def search_users_by_email(search_email, user_id):
 def follow_user(follower_uid, followee_uid):
     """
     Follow a new user by inserting a record in the followers table.
+
+    @param follower_uid: Follower UID
+    @param followee_uid: Followee UID
     """
     try:
         with SSHTunnelForwarder(('starbug.cs.rit.edu', 22),
@@ -100,6 +105,9 @@ def follow_user(follower_uid, followee_uid):
 def unfollow_user(follower_uid, followee_uid):
     """
     Unfollow a user by deleting a record from the followers table.
+
+    @param follower_uid: Follower UID
+    @param followee_uid: Followee UID
     """
     try:
         with SSHTunnelForwarder(('starbug.cs.rit.edu', 22),
@@ -135,10 +143,9 @@ def unfollow_user(follower_uid, followee_uid):
     except Exception as e:
         print(f"Error: {e}")
 
-# Example usage
 if __name__ == "__main__":
     # Search for users by email
-    user_id = 1  # Current user ID
+    user_id = 1
     search_email = 'example'
     search_users_by_email(search_email, user_id)
 

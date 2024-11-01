@@ -180,7 +180,99 @@ def random_datetime(start, end):
     random_seconds = random.randint(0, int(delta.total_seconds()))
     return start + timedelta(seconds=random_seconds)
 
+def search_users_by_email(search_email, user_id):
+    """
+    Search for new users to follow by email.
 
+    @param search_email: Search for a user by this email
+    @param user_id: User ID of the user
+    """
+    conn, server = get_db_connection()
+    if(not conn):
+        return conn
+    try:
+        with conn.cursor() as curs:
+            
+            sql_query = """
+                SELECT u.userid, u.username, e.email
+                FROM users u
+                JOIN email e ON u.userid = e.uid  -- Adjusted to use 'uid' as foreign key
+                WHERE e.email ILIKE %s
+                    AND u.userid != %s
+                    AND u.userid NOT IN (
+                        SELECT followee_uid FROM followers WHERE follower_uid = %s
+                    )
+                ORDER BY u.username ASC;
+            """
+
+            curs.execute(sql_query, (f"%{search_email}%", user_id, user_id))
+            results = curs.fetchall()
+
+            print("\nSearch Results:")
+            print("-" * 40)
+            for row in results:
+                print(f"User ID: {row[0]}, Username: {row[1]}, Email: {row[2]}")
+            print("-" * 40)
+            return results
+        
+    except Exception as e:
+        print(f"Error updating rating: {e}")
+    finally:
+        conn.close()
+        server.stop()
+
+def follow_user(follower_uid, followee_uid):
+    """
+    Follow a new user by inserting a record in the followers table.
+
+    @param follower_uid: Follower UID
+    @param followee_uid: Followee UID
+    """
+    conn, server = get_db_connection()
+    try:
+        with conn.cursor() as curs:
+
+            sql_query = """
+                INSERT INTO followers (follower_uid, followee_uid)
+                VALUES (%s, %s)
+                ON CONFLICT DO NOTHING;  -- Avoid duplicate follows
+            """
+
+            curs.execute(sql_query, (follower_uid, followee_uid))
+            conn.commit()
+            print(f"User {follower_uid} now follows User {followee_uid}")
+
+            
+
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        conn.close()
+        server.stop()
+
+def unfollow_user(follower_uid, followee_uid):
+    """
+    Unfollow a user by deleting a record from the followers table.
+
+    @param follower_uid: Follower UID
+    @param followee_uid: Followee UID
+    """
+    conn,server = get_db_connection()
+    try:
+        with conn.cursor() as curs:
+            sql_query = """
+                DELETE FROM followers
+                WHERE follower_uid = %s AND followee_uid = %s
+            """
+
+            curs.execute(sql_query, (follower_uid, followee_uid))
+            conn.commit()
+            print(f"User {follower_uid} unfollowed User {followee_uid}")
+
+            conn.close()
+
+    except Exception as e:
+        print(f"Error: {e}")
 
 def homepage(curs):
     global USER_STATE

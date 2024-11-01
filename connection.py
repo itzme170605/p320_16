@@ -4,16 +4,13 @@ from sshtunnel import SSHTunnelForwarder
 
 
 class Connection:
-    def __init__(self, username, passwd, dbName) -> None:
+    def __init__(self, username, passwd, dbName) :
         self.username = username
         self.password = passwd
         self.dbName = dbName
 
         try:
-            with SSHTunnelForwarder(('starbug.cs.rit.edu', 22),
-                                    ssh_username=self.username,
-                                    ssh_password=self.password,
-                                    remote_bind_address=('127.0.0.1', 5432)) as server:
+            with SSHTunnelForwarder(('starbug.cs.rit.edu', 22),ssh_username=self.username,ssh_password=self.password,remote_bind_address=('127.0.0.1', 5432)) as server:
                 server.start()
                 print("SSH tunnel established")
                 params = {
@@ -35,7 +32,6 @@ class Connection:
                 while row is not None:
                     print(row)
                     row = self.curs.fetchone()
-
-                
+            return self.curs
         except:
             print("Connection failed")

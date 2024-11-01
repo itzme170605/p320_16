@@ -3,6 +3,8 @@ from sshtunnel import SSHTunnelForwarder
 import random
 from datetime import datetime, timedelta
 import os
+from decimal import Decimal
+
 
 USER_STATE = 0
 USER_DETAILS = ()
@@ -46,6 +48,23 @@ def close_connection(server, conn):
         server.stop()
     print("Database and SSH tunnel closed.")
 
+def genereate_unique_user_id():
+    
+    conn, server = get_db_connection()
+    try:
+        with conn.cursor() as curs:
+            while True:
+                rand = random.randint(0,100000000)
+                curs.execute(f"SELECT * from users where userid = {rand};")
+                if(curs.fetchone()):
+                    continue
+                else:
+                    break
+        conn.close()
+        server.stop()
+        return rand
+    except Exception as e:
+        print(f"Error in id generation try again {e}")
 
 def search_video_games(search_params, sort_by='name', order='ASC'):
     sort_columns = {
@@ -54,7 +73,8 @@ def search_video_games(search_params, sort_by='name', order='ASC'):
     }
     sort_column = sort_columns.get(sort_by, 'vg.name')
     query_base = """
-        SELECT DISTINCT 
+        SELECT DISTINCT
+            vg.gameid as Game_id,
             vg.name AS game_name,
             STRING_AGG(DISTINCT p.name, ', ') AS platforms,
             STRING_AGG(DISTINCT c.name, ', ') AS developers,
@@ -278,6 +298,10 @@ def unfollow_user(follower_uid, followee_uid):
         conn.close()
         server.stop()
 
+
+
+
+
 def search_for_users(curs,conn):
     return None
 
@@ -300,14 +324,13 @@ def homepage(conn, curs):
         if choice == '1':
             view_profile(curs,conn)
         elif choice == '2':
-            view_collections(curs,conn)
-
+            view_collections()
         elif choice == '3':
-            make_collection(curs,conn)
+            make_collection()
         elif choice == '4':
-            log_game_play(curs,conn)
+            log_game_play()
         elif choice == '5':
-            search_for_users(curs,conn)
+            search_for_users()
         elif choice == '6':
             print("Exiting...")
             USER_STATE = -1
@@ -324,17 +347,29 @@ def view_profile(curs,conn):
         print(i)
     print("Viewing profile... (implementation here)")
     USER_STATE = 2
+from datetime import timedelta
 
+def format_playtime(total_play_time):
+    """Convert timedelta to formatted string."""
+    days, seconds = total_play_time.days, total_play_time.seconds
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    seconds = seconds % 60
 
-def view_collections(curs,conn):
-    # Implement functionality to view collections
+    years, days = divmod(days, 365)
+    months, days = divmod(days, 30)
+
+    return f"{years} years {months} months {days} days {hours} hours {minutes} minutes {seconds} seconds"
+
+def view_collections():
+    """Display collections and allow user to select and modify a collection."""
     global USER_STATE, USER_DETAILS
-    print("Viewing collections... (implementation here)")
-    conn,server = get_db_connection()
+    conn, server = get_db_connection()
     try:
         with conn.cursor() as curs:
             sql_query = """
                 SELECT
+                    c.collectionid as id,
                     c.name AS collection_name,
                     COUNT(g.gameid) AS number_of_games,
                     SUM(gl.end_time - gl.start_time) AS total_play_time
@@ -345,14 +380,47 @@ def view_collections(curs,conn):
                 LEFT JOIN
                     user_plays_video_games gl ON g.gameid = gl.gameid
                 WHERE
-                    c.userid = 2  -- Replace %s with the actual user ID
+                    c.userid = %s
                 GROUP BY
                     c.collectionid, c.name
                 ORDER BY
-                    c.name ASC;"""
-            curs.execute(sql_query,(USER_DETAILS[0],))
-            data = curs.fetchall()
-            print(data)
+                    c.name ASC;
+            """
+            curs.execute(sql_query, (USER_DETAILS[0],))
+            collections = curs.fetchall()
+
+        if not collections:
+            print("No collections found for the user.")
+            return
+
+        # Display each collection with formatted total playtime
+        for idx, (id,name, num_games, total_play_time) in enumerate(collections, start=1):
+            if(total_play_time == None):
+                formatted_time = total_play_time
+            else:
+                formatted_time = format_playtime(total_play_time)
+            print(f"{idx}. collection id: {id}\n   Collection Name: {name}\n   Number of Games: {num_games}\n   Total Play Time: {formatted_time}\n")
+        # User selects a collection to modify
+        while True:
+            try:
+                print('''
+    Options:
+        1 - Select a collection number to modify its name or
+        0 - exit
+''')
+                choice = int(input("-->||"))
+                if choice == 0:
+                    break
+                if 1 <= choice <= len(collections):
+                    selected_collection = collections[choice - 1][0]   
+                    modify_collection(selected_collection)
+                    conn.commit()
+                    break
+                else:
+                    print("Invalid selection. Please choose a valid collection number.")
+            except ValueError:
+                print("Invalid input. Please enter a number.")
+
     except Exception as e:
         print(f"Error: {e}")
     finally:
@@ -360,11 +428,179 @@ def view_collections(curs,conn):
         server.stop()
 
 
+def modify_collection(collection_name):
+    conn, server = get_db_connection()
+    """Allow user to modify the selected collection."""
+    print(f"\nModifying collection: {collection_name}")
+    # Example: prompt the user to change the collection's name
+    new_name = input("Enter new collection name (leave blank to keep current): ")
+    try:
+        with conn.cursor() as curs:
+            if new_name:
+                try:
+                    update_query = "UPDATE collection SET name = %s WHERE collectionid = %s;"
+                    curs.execute(update_query, (new_name, collection_name))
+                    conn.commit()
+                    print(f"Collection name updated to '{new_name}'.")
+                except Exception as e:
+                    print(f"Error updating collection: {e}")
+            else:
+                print("No changes made to the collection name.")
+    except Exception as e:
+        print(f"Error {e}")
+    finally:
+        conn.close()
+        server.stop()
+
+def genereate_unique_collectio_id():
+    
+    conn, server = get_db_connection()
+    try:
+        
+        with conn.cursor() as curs:
+            
+            while True:
+                rand = random.randint(0,1000000000)
+                curs.execute(f"SELECT * from collection where collectionid = {rand};")
+                if(curs.fetchone()):
+                    continue
+                else:
+                    break
+        conn.close()
+        server.stop()
+        return rand
+    except Exception as e:
+        print(f"Error in id generation try again {e}")
 
 
-def make_collection(curs,conn):
-    # Implement functionality to create a new collection
-    print("Creating a new collection... (implementation here)")
+
+def make_collection():
+    conn, server = get_db_connection()
+    """Create a new collection and allow user to add games to it."""
+    print("Creating a new collection...")
+    
+    # Prompt user for collection name
+    collection_name = input("Enter the name of the new collection: ")
+    
+    # Generate a unique collection ID
+    collection_id = genereate_unique_collectio_id()
+    #user id 
+    user_id = USER_DETAILS[0]
+    try:
+        with conn.cursor() as curs:
+            # Insert the new collection into the 'collection' table
+            insert_collection_query = """
+                INSERT INTO collection (collectionid, userid, name) 
+                VALUES (%s, %s, %s);
+            """
+            curs.execute(insert_collection_query, (collection_id, user_id, collection_name))
+            conn.commit()
+            print(f"Collection '{collection_name}' created successfully with ID {collection_id}.\n")
+            add_games_menu(curs, conn, collection_id)
+    except Exception as e:
+        print(f"Error creating collection: {e}")
+        conn.rollback()
+        return
+    finally:
+        conn.close()
+        server.stop()
+    
+    # Prompt the user to add games to the collection
+
+def print_search_results(results):
+
+    print(f"{'Game Id':<10} {'Game Title':<30} {'Platform':<20} {'Developer':<20} {'Collaborators':<40} {'Sales':<10} {'Rating':<5} {'Score':<10} {'Genre':<15} {'Release Date':<15} {'Price':<10}")
+    print("="*175)
+    if(results == None):
+        print("No Results for the given search try using better arguments. and try again")
+    for result in results:
+        game_id, game_title, platform, developer, collaborators, sales, rating, score, genre, release_date, price = result
+        print(f"{game_id:<10} {game_title:<30} {platform:<20} {developer:<20} {collaborators or 'N/A':<40} {sales:<10.2f} {rating:<5} {score:<10.2f} {genre:<15} {release_date:<15} {price:<10.2f}")
+
+def add_games_menu(curs, conn, collection_id):
+    """Menu to add games to the created collection."""
+    while True:
+        print("\nChoose an option:")
+        print("1. Add a game to the collection by id")
+        print("2. Add games by name")
+        print("3. exit")
+
+        try:
+            choice = int(input("Enter your choice: "))
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+            continue
+
+        if choice == 1:
+            try:
+                game_id = input("Enter the game ID to add: ")
+                
+                # Insert game into 'games_in_collection' table
+                insert_game_query = """
+                    INSERT INTO games_in_collection (gameid, collectionid)
+                    VALUES (%s, %s);
+                """
+                curs.execute(insert_game_query, (game_id, collection_id))
+                conn.commit()
+                print(f"Game with ID {game_id} added to collection {collection_id}.")
+            except Exception as e:
+                print(f"Error adding game: {e}")
+                conn.rollback()
+
+        elif choice == 2:
+            print("Search By Search params:(leave empty if dont know)")
+            keys = ['name', 'price','genre ','release_date']
+            params = {}
+            for i in range(4):
+                x = input(keys[i]+":")
+                if(x):
+                    params[keys[i]] = x
+                else:
+                    print("invalid entry set to ''")
+                    params[keys[i]] = ''
+            result = search_video_games(params) #sorted by nae and Ascending order
+            print_search_results(result)
+            
+        elif choice == 3:
+            print("Finished adding games. Exiting to main menu.")
+            break
+        else:
+            print("Invalid choice. Please select 1 or 2 or 3")
+
+# def view_collections(curs,conn):
+#     # Implement functionality to view collections
+#     global USER_STATE, USER_DETAILS
+#     print("Viewing collections... (implementation here)")
+#     conn,server = get_db_connection()
+#     try:
+#         with conn.cursor() as curs:
+#             sql_query = """
+#                 SELECT
+#                     c.name AS collection_name,
+#                     COUNT(g.gameid) AS number_of_games,
+#                     SUM(gl.end_time - gl.start_time) AS total_play_time
+#                 FROM
+#                     collection c
+#                 LEFT JOIN
+#                     games_in_collection g ON c.collectionid = g.collectionid
+#                 LEFT JOIN
+#                     user_plays_video_games gl ON g.gameid = gl.gameid
+#                 WHERE
+#                     c.userid = 2  -- Replace %s with the actual user ID
+#                 GROUP BY
+#                     c.collectionid, c.name
+#                 ORDER BY
+#                     c.name ASC;"""
+#             curs.execute(sql_query,(USER_DETAILS[0],))
+#             data = curs.fetchall()
+            
+#     except Exception as e:
+#         print(f"Error: {e}")
+#     finally:
+#         conn.close()
+#         server.stop()
+
+
 
 def log_game_play(curs,conn):
     # Implement functionality to log game play

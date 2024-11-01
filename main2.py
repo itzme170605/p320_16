@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import os
 
 USER_STATE = 0
+USER_DETAILS = ()
 
 username = "jj7485"
 passwd = "itzme@170605Kr"
@@ -274,8 +275,8 @@ def unfollow_user(follower_uid, followee_uid):
     except Exception as e:
         print(f"Error: {e}")
 
-def homepage(curs):
-    global USER_STATE
+def homepage(conn, curs):
+    global USER_STATE, USER_DETAILS
     while True:
         print('''
         Signed in!
@@ -320,8 +321,8 @@ def log_game_play(curs):
     # Implement functionality to log game play
     print("Logging game play... (implementation here)")
 
-def login(curs):
-    global USER_STATE
+def login(conn, curs):
+    global USER_STATE, USER_DETAILS
     while True:
         print('''Welcome! To proceed choose one of the following:
                 1 - Login (for existing users)
@@ -344,9 +345,10 @@ def login(curs):
             # Parameterized query to prevent SQL injection
             query = "SELECT * FROM users WHERE username = %s AND password = %s;"
             curs.execute(query, (uname, password))
-            
-            if curs.fetchone():
+            data = curs.fetchone()
+            if data:
                 print("Login successful!")
+                USER_DETAILS = data
                 USER_STATE = 2
                 return USER_STATE
             else:
@@ -360,6 +362,7 @@ def login(curs):
             uname = input("Username: ")
             passwd = input("Password: ")
             dob = input("DOB (YYYY-MM-DD): ")
+            uid = 2000
             creation_date =  datetime.now().strftime("%Y-%m-%d")
             query = "SELECT * FROM users WHERE username = %s;"
             curs.execute(query, (uname,))
@@ -368,11 +371,12 @@ def login(curs):
                 print("Username already taken. Try again!")
             else:
                 signup_query = """
-                    INSERT INTO users (uid, first_name, last_name, dob, creation_date, password, username) 
+                    INSERT INTO users (userid, fname, lname, dob, creationdate, password, username) 
                     VALUES (%s, %s, %s, %s, %s, %s, %s);
                 """
-                curs.execute(signup_query, (fname, lname, dob, creation_date, passwd, uname))
+                curs.execute(signup_query, (uid,fname, lname, dob, creation_date, passwd, uname))
                 print("Signed Up! You can go back and sign in.")
+                conn.commit()
                 USER_STATE = 0
                 return USER_STATE
 
@@ -397,10 +401,11 @@ def main():
             close_connection(server, conn)
             break
         elif USER_STATE == 0:
-            USER_STATE = login(curs)
+            USER_STATE = login(conn, curs)
 
     if USER_STATE == 2:
-        homepage(curs)
+        # os.system('cls')
+        homepage(conn, curs)
         close_connection(server, conn)
 
 if __name__ == "__main__":

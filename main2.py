@@ -253,23 +253,27 @@ def follow_user(follower_uid, followee_uid):
     try:
         with conn.cursor() as curs:
 
-            sql_query = """
+            sql_query =  """
                 INSERT INTO followers (follower_uid, followee_uid)
                 VALUES (%s, %s)
-                ON CONFLICT DO NOTHING;  -- Avoid duplicate follows
+                ON CONFLICT (follower_uid, followee_uid) DO NOTHING
+                RETURNING follower_uid;
             """
 
             curs.execute(sql_query, (follower_uid, followee_uid))
+            result = curs.fetchone()
             conn.commit()
-            print(f"User {follower_uid} now follows User {followee_uid}")
-
-            
-
+            if result:
+                print(f"User {follower_uid} now follows User {followee_uid}")
+            else:
+                print(f"User {follower_uid} is already following User {followee_uid}")
+            # print(f"User {follower_uid} now follows User {followee_uid}")
     except Exception as e:
         print(f"Error: {e}")
     finally:
         conn.close()
         server.stop()
+        # return result
 
 def unfollow_user(follower_uid, followee_uid):
     """
@@ -281,16 +285,19 @@ def unfollow_user(follower_uid, followee_uid):
     conn,server = get_db_connection()
     try:
         with conn.cursor() as curs:
-            sql_query = """
+            sql_query ="""
                 DELETE FROM followers
                 WHERE follower_uid = %s AND followee_uid = %s
+                RETURNING follower_uid;
             """
 
             curs.execute(sql_query, (follower_uid, followee_uid))
+            result = curs.fetchone()
             conn.commit()
-            print(f"User {follower_uid} unfollowed User {followee_uid}")
-
-            conn.close()
+            if result:
+                print(f"User {follower_uid} unfollowed User {followee_uid}")
+            else:
+                print(f"No follow relationship found between User {follower_uid} and User {followee_uid}")
 
     except Exception as e:
         print(f"Error: {e}")
@@ -298,12 +305,51 @@ def unfollow_user(follower_uid, followee_uid):
         conn.close()
         server.stop()
 
+def search_for_users():
+    conn, server = get_db_connection()
+    try:
+        with conn.cursor() as curs:
+            search_email = input("Enter email to search: ")
+            curs.execute("""
+                SELECT u.userid, u.username, e.email
+                FROM users u
+                JOIN email e ON u.userid = e.uid
+                WHERE e.email ILIKE %s
+                    AND u.userid != %s
+            """, (f"%{search_email}%", USER_DETAILS[0]))
+            users = curs.fetchall()
+            print("Search Results:")
+            for index, user in enumerate(users, start=1):
+                print(f"{index}. User ID: {user[0]}, Username: {user[1]}, Email: {user[2]}")
+                
+    except Exception as e:
+        print(f"Error searching users: {e}")
+    finally:
+        close_connection(server, conn)
 
-
-
-
-def search_for_users(curs,conn):
-    return None
+def log_game_play():
+    global USER_DETAILS
+    conn, server = get_db_connection()
+    try:
+        with conn.cursor() as curs:
+            curs.execute("SELECT gameid, name FROM video_games")
+            games = curs.fetchall()
+            for game in games:
+                print(f"ID: {game[0]}, Name: {game[1]}")
+            game_id = input("Enter game ID to log play: ")
+            start_time = random_datetime(datetime(2018, 1, 1), datetime.now())
+            end_time = random_datetime(start_time, datetime.now())
+            curs.execute("""
+                INSERT INTO user_plays_video_games (userid, gameid, start_time, end_time)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (userid, gameid) DO UPDATE SET start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time
+            """, (USER_DETAILS[0], game_id, start_time, end_time))
+            conn.commit()
+            print(f"Playtime logged for game ID {game_id}")
+    except Exception as e:
+        print(f"Error logging playtime: {e}")
+    finally:
+        close_connection(server, conn)
 
 def homepage(conn, curs):
     global USER_STATE, USER_DETAILS
@@ -317,10 +363,12 @@ def homepage(conn, curs):
             3 - Make a New Collection
             4 - Log Game Play
             5 - Search for users
-            6 - Exit
+            6 - Follow/Unfollow users by id
+            7 - rate a video game
+            8 - Exit
         ''')
         
-        choice = input("->|| ")
+        choice = input("->||")
         if choice == '1':
             view_profile(curs,conn)
         elif choice == '2':
@@ -332,6 +380,30 @@ def homepage(conn, curs):
         elif choice == '5':
             search_for_users()
         elif choice == '6':
+            uid = int(input("Enter user id:"))
+
+            print("""
+Choose an action:
+    1 - follow 
+    2 - unfollow """)
+            x = int(input("-->||"))
+            if(x == 1):
+                x = input("Are you sure?(y/n)")
+                if(x in'Yy'):
+
+                    follow_user(USER_DETAILS[0],uid)
+            if(x == 2):
+                x = input("Are you sure ?(Y/N)")
+                if(x in "Yy"):
+                    unfollow_user(USER_DETAILS[0], uid)
+                else:
+                    print("exiting")
+        
+        elif choice == '7':
+            os.system("cls")
+            print("Rate video Games:")
+
+        elif choice == '8':
             print("Exiting...")
             USER_STATE = -1
             break
@@ -405,17 +477,31 @@ def view_collections():
             try:
                 print('''
     Options:
-        1 - Select a collection number to modify its name or
+        1 - Select a collection number to modify its name/games
         0 - exit
 ''')
                 choice = int(input("-->||"))
                 if choice == 0:
                     break
                 if 1 <= choice <= len(collections):
-                    selected_collection = collections[choice - 1][0]   
-                    modify_collection(selected_collection)
-                    conn.commit()
-                    break
+                    os.system("cls")
+                    x = int(input("""Choice:
+                    1 - Modify name
+                    2 - Remove game
+                    3 - add Game
+                    4 - exit"""))
+                    selected_collection = collections[choice - 1][0]
+                    if(x == 1):
+                        modify_collection(selected_collection)
+                        conn.commit()
+                    elif(x == 2):
+                        remove_games_menu(curs,conn,selected_collection)
+                        conn.commit()
+                    elif(x==3):
+                        add_games_menu(curs,conn, selected_collection)
+                        conn.commit()
+                    else:
+                        break
                 else:
                     print("Invalid selection. Please choose a valid collection number.")
             except ValueError:
@@ -519,6 +605,8 @@ def print_search_results(results):
 
 def add_games_menu(curs, conn, collection_id):
     """Menu to add games to the created collection."""
+    conn,server = get_db_connection()
+    curs = conn.cursor()
     while True:
         print("\nChoose an option:")
         print("1. Add a game to the collection by id")
@@ -542,6 +630,8 @@ def add_games_menu(curs, conn, collection_id):
                 """
                 curs.execute(insert_game_query, (game_id, collection_id))
                 conn.commit()
+                conn.close()
+                server.stop()
                 print(f"Game with ID {game_id} added to collection {collection_id}.")
             except Exception as e:
                 print(f"Error adding game: {e}")
@@ -566,6 +656,62 @@ def add_games_menu(curs, conn, collection_id):
             break
         else:
             print("Invalid choice. Please select 1 or 2 or 3")
+
+def remove_games_menu(curs, conn, collection_id):
+    """Menu to add games to the created collection."""
+    conn, server = get_db_connection()
+    curs = conn.cursor()
+    while True:
+        print("\nChoose an option:")
+        print("1. remove a game to the collection by id")
+        print("2. remove games by name")
+        print("3. exit")
+
+        try:
+            choice = int(input("Enter your choice: "))
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+            continue
+
+        if choice == 1:
+            try:
+                game_id = input("Enter the game ID to remove: ")
+                
+                # Insert game into 'games_in_collection' table
+                insert_game_query = """
+                DELETE FROM games_in_collection
+                WHERE gameid = %s AND collectionid = %s;
+                """
+
+                curs.execute(insert_game_query, (game_id, collection_id))
+                conn.commit()
+                conn.close()
+                server.stop()
+                print(f"Game with ID {game_id} removed to collection {collection_id}.")
+            except Exception as e:
+                print(f"Error adding game: {e}")
+                conn.rollback()
+
+        elif choice == 2:
+            print("Search By Search params:(leave empty if dont know)")
+            keys = ['name', 'price','genre ','release_date']
+            params = {}
+            for i in range(4):
+                x = input(keys[i]+":")
+                if(x):
+                    params[keys[i]] = x
+                else:
+                    print("invalid entry set to ''")
+                    params[keys[i]] = ''
+            result = search_video_games(params) #sorted by nae and Ascending order
+            print_search_results(result)
+            
+        elif choice == 3:
+            print("Finished adding games. Exiting to main menu.")
+            break
+        else:
+            print("Invalid choice. Please select 1 or 2 or 3")
+
 
 # def view_collections(curs,conn):
 #     # Implement functionality to view collections
@@ -593,7 +739,6 @@ def add_games_menu(curs, conn, collection_id):
 #                     c.name ASC;"""
 #             curs.execute(sql_query,(USER_DETAILS[0],))
 #             data = curs.fetchall()
-            
 #     except Exception as e:
 #         print(f"Error: {e}")
 #     finally:
@@ -602,9 +747,7 @@ def add_games_menu(curs, conn, collection_id):
 
 
 
-def log_game_play(curs,conn):
-    # Implement functionality to log game play
-    print("Logging game play... (implementation here)")
+
 
 def search_users(curs,conn):
     print("")

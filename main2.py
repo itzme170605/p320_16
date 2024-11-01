@@ -278,8 +278,9 @@ def unfollow_user(follower_uid, followee_uid):
 def homepage(conn, curs):
     global USER_STATE, USER_DETAILS
     while True:
-        print('''
-        Signed in!
+        print(f'''
+        Welcome, {USER_DETAILS[1]}!
+        
         Choose an option:
             1 - View Profile
             2 - View Collections
@@ -349,7 +350,9 @@ def login(conn, curs):
             if data:
                 print("Login successful!")
                 USER_DETAILS = data
+                curs.execute("INSERT INTO user_log(userid, lasttimelogged) VALUES(%s,%s);",(USER_DETAILS[0],datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")))
                 USER_STATE = 2
+                conn.commit()
                 return USER_STATE
             else:
                 print("Invalid username or password. Try again!")

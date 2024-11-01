@@ -274,6 +274,12 @@ def unfollow_user(follower_uid, followee_uid):
 
     except Exception as e:
         print(f"Error: {e}")
+    finally:
+        conn.close()
+        server.stop()
+
+def search_for_users(curs,conn):
+    return None
 
 def homepage(conn, curs):
     global USER_STATE, USER_DETAILS
@@ -286,19 +292,23 @@ def homepage(conn, curs):
             2 - View Collections
             3 - Make a New Collection
             4 - Log Game Play
-            5 - Exit
+            5 - Search for users
+            6 - Exit
         ''')
         
         choice = input("->|| ")
         if choice == '1':
-            view_profile(curs)
+            view_profile(curs,conn)
         elif choice == '2':
-            view_collections(curs)
+            view_collections(curs,conn)
+
         elif choice == '3':
-            make_collection(curs)
+            make_collection(curs,conn)
         elif choice == '4':
-            log_game_play(curs)
+            log_game_play(curs,conn)
         elif choice == '5':
+            search_for_users(curs,conn)
+        elif choice == '6':
             print("Exiting...")
             USER_STATE = -1
             break
@@ -306,21 +316,62 @@ def homepage(conn, curs):
             print("Invalid choice. Please try again.")
 
 
-def view_profile(curs):
+
+def view_profile(curs,conn):
+    global USER_STATE, USER_DETAILS
     # Implement functionality to view user profile information
+    for i in USER_DETAILS:
+        print(i)
     print("Viewing profile... (implementation here)")
+    USER_STATE = 2
 
-def view_collections(curs):
+
+def view_collections(curs,conn):
     # Implement functionality to view collections
+    global USER_STATE, USER_DETAILS
     print("Viewing collections... (implementation here)")
+    conn,server = get_db_connection()
+    try:
+        with conn.cursor() as curs:
+            sql_query = """
+                SELECT
+                    c.name AS collection_name,
+                    COUNT(g.gameid) AS number_of_games,
+                    SUM(gl.end_time - gl.start_time) AS total_play_time
+                FROM
+                    collection c
+                LEFT JOIN
+                    games_in_collection g ON c.collectionid = g.collectionid
+                LEFT JOIN
+                    user_plays_video_games gl ON g.gameid = gl.gameid
+                WHERE
+                    c.userid = 2  -- Replace %s with the actual user ID
+                GROUP BY
+                    c.collectionid, c.name
+                ORDER BY
+                    c.name ASC;"""
+            curs.execute(sql_query,(USER_DETAILS[0],))
+            data = curs.fetchall()
+            print(data)
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        conn.close()
+        server.stop()
 
-def make_collection(curs):
+
+
+
+def make_collection(curs,conn):
     # Implement functionality to create a new collection
     print("Creating a new collection... (implementation here)")
 
-def log_game_play(curs):
+def log_game_play(curs,conn):
     # Implement functionality to log game play
     print("Logging game play... (implementation here)")
+
+def search_users(curs,conn):
+    print("")
 
 def login(conn, curs):
     global USER_STATE, USER_DETAILS
@@ -398,7 +449,7 @@ def main():
     conn, server = get_db_connection()
     curs = conn.cursor()
 
-    while USER_STATE < 2:
+    while True:
         if USER_STATE == -1:
             print("Quitting program...")
             close_connection(server, conn)
@@ -406,10 +457,14 @@ def main():
         elif USER_STATE == 0:
             USER_STATE = login(conn, curs)
 
-    if USER_STATE == 2:
+        if USER_STATE == 2:
         # os.system('cls')
-        homepage(conn, curs)
-        close_connection(server, conn)
+            homepage(conn, curs)
+            close_connection(server, conn)
+            continue
+        elif USER_STATE == 3:
+            view_profile()
+
 
 if __name__ == "__main__":
     main()

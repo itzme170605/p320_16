@@ -351,6 +351,174 @@ def log_game_play():
     finally:
         close_connection(server, conn)
 
+def random_datetime(start, end):
+    delta = end - start
+    random_seconds = random.randint(0, int(delta.total_seconds()))
+    return start + timedelta(seconds=random_seconds)
+
+def mark_as_played(user_id, game_id=None, collection_id=None):
+    """
+    Mark a video game as played by a user, recording the start and end times.
+    If game_id is not provided, a random game from the specified collection will be chosen.
+    :param user_id: The ID of the user.
+    :param game_id: Optional ID of the game.
+    :param collection_id: Optional ID of the collection to choose a random game from.
+    :param start_time: Optional start time for the play session. Defaults to current time.
+    :param end_time: Optional end time for the play session.
+    """
+    conn, server = get_db_connection()
+    try:
+        with conn.cursor() as curs:
+            # If game_id is not provided but collection_id is, choose a random game from the collection
+            start_date = datetime(2018, 1, 1, 0, 0, 0)  # Earliest play session start
+            end_date = datetime.now()  # Latest possible end time
+            start_time = random_datetime(start_date, end_date)
+            end_time = random_datetime(start_time, end_date)
+                
+            if game_id is None and collection_id is not None:
+                random_game_query = """
+                    SELECT gameid
+                    FROM games_in_collection
+                    WHERE collectionid = %s;
+                """
+                curs.execute(random_game_query, (collection_id))
+                games = curs.fetchall()
+
+                if not games:
+                    print(f"No games found in collection {collection_id}.")
+                    return
+                
+                game_id = random.choice(games)[0]
+                print(f"Random game selected from collection {collection_id}: Game ID {game_id}")
+            
+            # Check if game_id is still None (no game or collection provided)
+            if game_id is None:
+                print("No game_id or valid collection_id provided.")
+                return
+
+            # Check if the user has played the game previously
+            query = f"""
+                select * from user_plays_video_games upvg where upvg.userid = {user_id} and upvg.gameid = {game_id}
+            """
+            curs.execute(query)
+            results = curs.fetchall()
+
+            if len(results) > 0:
+                # Update existing play session
+                print("Updating existing play session")
+                update_query = """
+                    UPDATE user_plays_video_games 
+                    SET start_time = %s, end_time = %s 
+                    WHERE userid = %s AND gameid = %s;
+                """
+                curs.execute(update_query, (start_time, end_time, user_id, game_id))
+                print(f"Play session updated for user {user_id} with game {game_id}.")
+            else:
+                # insert
+                print("reached insert")
+                insert_query = """
+                INSERT INTO user_plays_video_games (userid, gameid, start_time, end_time)
+                VALUES (%s, %s, %s, %s);
+            """
+                curs.execute(insert_query, (user_id, game_id, start_time, end_time))
+
+                print(f"Play session recorded for user {user_id} with game {game_id}.")
+            
+            conn.commit()            
+
+    except psycopg2.OperationalError as oe:
+        print(f"Database connection error: {oe}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+            print("Database connection closed.")
+
+def user_log_game_play():
+    global USER_DETAILS
+    conn, server = get_db_connection()
+    try:
+        with conn.cursor() as curs:
+            print_games_owned()
+            gameid = int(input("Game id:"))
+            start_time = input("Enter a date and time (YYYY-MM-DD HH:MM:SS): ")
+            end_time = input("Enter a date and time (YYYY-MM-DD HH:MM:SS): ")
+            try:
+                # Parse the input string into a datetime object
+
+                print(f"You entered: {start_time} - {end_time}")
+                if(start_time != '' and end_time != ''):
+                    start_time = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+                    end_time = datetime.strptime(end_time, '%Y-%m-%d %H:%M:%S')
+                    query = '''
+                    INSERT INTO user_plays_video_games (userid, gameid, start_time, end_time) VALUES (%s, %s, %s, %s);
+                    '''
+                    curs.execute(query, (USER_DETAILS[0],gameid, start_time,end_time))
+                    conn.commit()
+                    print("Sucess!!")
+                else:
+                    log_game_play()
+            except ValueError:
+                print("Invalid format. Please enter the date and time in 'YYYY-MM-DD HH:MM:SS' format.")
+    except Exception as e:
+        print(f"Error : {e}")
+    finally:
+        conn.close()
+        server.close()
+
+def print_games_owned():
+    print("Games owned by user:")
+    query = '''
+SELECT 
+    vg.gameid,
+    vg.name,
+    uvg.rating,
+    uvg.purchasedate
+FROM 
+    user_owns_video_games uvg
+JOIN 
+    video_games vg ON uvg.gameid = vg.gameid
+WHERE 
+    uvg.userid = %s;
+
+            '''
+    conn,server = get_db_connection()
+    try:
+        with conn.cursor() as curs:
+            curs.execute(query, (USER_DETAILS[0],))
+            data = curs.fetchall()
+            if(data == None):
+                print("No games owened!")
+            else:
+                print(data)
+            conn.close()
+            server.stop()
+    except Exception as e:
+        print(f"Error: {e}")
+
+def print_games_in_colection(collectionid):
+    print("Games in Collection:")
+    query = '''
+SELECT v.gameid, v.name
+FROM games_in_collection c
+JOIN video_games v ON c.gameid = v.gameid
+WHERE c.collectionid = %s;
+'''
+    conn,server = get_db_connection()
+    try:
+        with conn.cursor() as curs:
+            curs.execute(query, (collectionid,))
+            data = curs.fetchall()
+            if(data == None):
+                print("No games in Collection!")
+            else:
+                print(data)
+            conn.close()
+            server.stop()
+    except Exception as e:
+        print(f"Error: {e}")
+
 def homepage(conn, curs):
     global USER_STATE, USER_DETAILS
     while True:
@@ -365,7 +533,8 @@ def homepage(conn, curs):
             5 - Search for users
             6 - Follow/Unfollow users by id
             7 - rate a video game
-            8 - Exit
+            8 - Play game
+            9 - Exit
         ''')
         
         choice = input("->||")
@@ -376,7 +545,7 @@ def homepage(conn, curs):
         elif choice == '3':
             make_collection()
         elif choice == '4':
-            log_game_play()
+            user_log_game_play()
         elif choice == '5':
             search_for_users()
         elif choice == '6':
@@ -401,9 +570,34 @@ Choose an action:
         
         elif choice == '7':
             os.system("cls")
+            
+            print_games_owned()
             print("Rate video Games:")
-
+            game_name = input("Enter game name:")
+            result = search_video_games({'name': game_name})
+            print_search_results(result)
+            game_id = int(input("input the gameid to confirm:"))
+            conn,server = get_db_connection()
+            try:
+                with conn.cursor() as curs:
+                    query = '''
+SELECT * from user_owns_video_games 
+WHERE userid = %s AND gameid = %s;
+'''
+                    curs.execute(query,(USER_DETAILS[0],game_id))
+                    if(curs.fetchone()):
+                        rating = float(input("Rate the game:(0.5-10)"))
+                        rate_game_for_user(USER_DETAILS[0],game_id,rating)
+                    else:
+                        print("you donot own this game!")
+                    conn.close()
+                    server.stop()
+            except Exception as e:
+                print(f"Errror: {e}")
+            
         elif choice == '8':
+            mark_as_played(USER_DETAILS[0])
+        elif choice == '9':
             print("Exiting...")
             USER_STATE = -1
             break
@@ -412,14 +606,27 @@ Choose an action:
 
 
 
-def view_profile(curs,conn):
-    global USER_STATE, USER_DETAILS
-    # Implement functionality to view user profile information
-    for i in USER_DETAILS:
-        print(i)
-    print("Viewing profile... (implementation here)")
-    USER_STATE = 2
-from datetime import timedelta
+def view_profile(curs, conn):
+    global USER_DETAILS
+    try:
+        curs.execute("SELECT userid, fname, lname, dob, creationdate, password, username FROM users WHERE userid = %s", (USER_DETAILS[0],))
+        user_details = curs.fetchone()
+        
+        if user_details:
+            # Print formatted output
+            print(f"User ID: {user_details[0]}")
+            print(f"First Name: {user_details[1]}")
+            print(f"Last Name: {user_details[2]}")
+            print(f"Date of Birth: {user_details[3]}")
+            print(f"Creation Date: {user_details[4]}")
+            print(f"Username: {user_details[6]}")
+            # Note: Password should not be printed for security reasons
+        else:
+            print("No user found with the specified ID.")
+    except Exception as e:
+        print(f"Error fetching profile: {e}")
+
+
 
 def format_playtime(total_play_time):
     """Convert timedelta to formatted string."""
@@ -485,12 +692,14 @@ def view_collections():
                     break
                 if 1 <= choice <= len(collections):
                     os.system("cls")
+                    selected_collection = collections[choice - 1][0]
+                    print_games_in_colection(selected_collection)
                     x = int(input("""Choice:
                     1 - Modify name
                     2 - Remove game
                     3 - add Game
-                    4 - exit"""))
-                    selected_collection = collections[choice - 1][0]
+                    4 - exit
+                    """))
                     if(x == 1):
                         modify_collection(selected_collection)
                         conn.commit()
@@ -628,8 +837,24 @@ def add_games_menu(curs, conn, collection_id):
                     INSERT INTO games_in_collection (gameid, collectionid)
                     VALUES (%s, %s);
                 """
-                curs.execute(insert_game_query, (game_id, collection_id))
-                conn.commit()
+
+                query = '''
+                    SELECT platformid from games_on_platform where gameid = %s;
+'''
+                curs.execute(query,(game_id,))
+                platformid = curs.fetchone()[0]
+                query = '''
+                    SELECT * from user_owns_platforms where platformid = %s and userid = %s
+'''
+                curs.execute(query,(platformid,USER_DETAILS[0]))
+                data = curs.fetchone()
+                if(data == None):
+                    x = input("WARNING! YOu donot own the platform for this game Do you want to continue?(y/n):" )
+                    if(x in 'Nn'):
+                        print("Aborting action")
+                    else:
+                        curs.execute(insert_game_query, (game_id, collection_id))
+                        conn.commit()
                 conn.close()
                 server.stop()
                 print(f"Game with ID {game_id} added to collection {collection_id}.")
@@ -795,7 +1020,7 @@ def login(conn, curs):
             uname = input("Username: ")
             passwd = input("Password: ")
             dob = input("DOB (YYYY-MM-DD): ")
-            uid = 2000
+            uid = genereate_unique_user_id()
             creation_date =  datetime.now().strftime("%Y-%m-%d")
             query = "SELECT * FROM users WHERE username = %s;"
             curs.execute(query, (uname,))

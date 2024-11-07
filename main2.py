@@ -9,8 +9,6 @@ from decimal import Decimal
 USER_STATE = 0
 USER_DETAILS = ()
 
-username = "jj7485"
-passwd = "itzme@170605Kr"
 dbname = "p320_16"
 
 def get_db_connection():

@@ -13,6 +13,104 @@ username = ""
 passwd = ""
 dbname = "p320_16"
 
+def recommendation_system(user_id):
+    # Establish the database connection
+    conn, server = get_db_connection()
+    
+    try:
+        cursor = conn.cursor()
+
+        # Top 20 most popular video games in the last 90 days
+        def top_20_last_90_days():
+            query = """
+                SELECT vg.name, COUNT(*) as play_count 
+                FROM user_plays_video_games upvg
+                JOIN video_games vg ON vg.gameid = upvg.gameid
+                WHERE start_time >= %s
+                GROUP BY vg.name
+                ORDER BY play_count DESC
+                LIMIT 20;
+            """
+            ninety_days_ago = datetime.now() - timedelta(days=90)
+            cursor.execute(query, (ninety_days_ago,))
+            return [row[0] for row in cursor.fetchall()]  # Return only the names
+
+        # Top 20 most popular video games among user's followers
+        def top_20_among_followers():
+            query = """
+                SELECT vg.name, COUNT(*) as play_count
+                FROM user_plays_video_games upvg
+                JOIN followers f ON f.followee_uid = upvg.userid
+                JOIN video_games vg ON vg.gameid = upvg.gameid
+                WHERE f.follower_uid = %s
+                GROUP BY vg.name
+                ORDER BY play_count DESC
+                LIMIT 20;
+            """
+            cursor.execute(query, (user_id,))
+            return [row[0] for row in cursor.fetchall()]  # Return only the names
+
+        # Top 5 new releases of the current month
+        def top_5_new_releases():
+            first_day_of_month = datetime.now().replace(day=1)
+            last_day_of_month = datetime.now().replace(day=1) + timedelta(days=32)
+            last_day_of_month = last_day_of_month.replace(day=1) - timedelta(days=1)
+
+            query = """
+                SELECT name 
+                FROM video_games
+                WHERE releasedate BETWEEN %s AND %s
+                ORDER BY releasedate DESC
+                LIMIT 5;
+            """
+            cursor.execute(query, (first_day_of_month, last_day_of_month))
+            return [row[0] for row in cursor.fetchall()]  # Return only the names
+
+        # "For you" - Recommendations based on user's play history
+        def personalized_recommendations():
+            query = """
+                SELECT DISTINCT vg.name, vg.releasedate
+                FROM user_plays_video_games upvg_other
+                JOIN genre_of_games gog ON upvg_other.gameid = gog.gameid
+                JOIN video_games vg ON vg.gameid = upvg_other.gameid
+                LEFT JOIN user_plays_video_games upvg_user
+                ON upvg_user.gameid = vg.gameid AND upvg_user.userid = %s
+                WHERE upvg_other.userid != %s
+                AND gog.genreid IN (
+                    SELECT DISTINCT gog.genreid
+                    FROM user_plays_video_games upvg
+                    JOIN genre_of_games gog ON upvg.gameid = gog.gameid
+                    WHERE upvg.userid = %s
+                )
+                AND upvg_user.gameid IS NULL
+                ORDER BY vg.releaseDate DESC
+                LIMIT 10;
+            """
+            cursor.execute(query, (user_id, user_id, user_id))
+            return [row[0] for row in cursor.fetchall()]  # Return only the names
+
+        # Fetch recommendations and print each separately
+        print("Top 20 most popular video games in the last 90 days:")
+        for game in top_20_last_90_days():
+            print(f" - {game}")
+
+        print("\nTop 20 most popular video games among your followers:")
+        for game in top_20_among_followers():
+            print(f" - {game}")
+
+        print("\nTop 5 new releases of the current month:")
+        for game in top_5_new_releases():
+            print(f" - {game}")
+
+        print("\nFor you - Personalized recommendations based on your play history:")
+        for game in personalized_recommendations():
+            print(f" - {game}")
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        close_connection(server, conn)
+        
 def get_db_connection():
     try:
         server = SSHTunnelForwarder(

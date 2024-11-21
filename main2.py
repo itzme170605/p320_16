@@ -1074,8 +1074,6 @@ def remove_games_menu(curs, conn, collection_id):
 
 
 
-# "comments"
-
 def search_users(curs,conn):
     print("")
 

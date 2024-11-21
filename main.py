@@ -1078,11 +1078,6 @@ def remove_games_menu(curs, conn, collection_id):
 
 
 
-
-
-def search_users(curs,conn):
-    print("")
-
 def login(conn, curs):
     global USER_STATE, USER_DETAILS
     while True:

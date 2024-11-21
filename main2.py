@@ -9,8 +9,8 @@ from decimal import Decimal
 USER_STATE = 0
 USER_DETAILS = ()
 
-username = "jj7485"
-passwd = "itzme@170605Kr"
+username = ""
+passwd = ""
 dbname = "p320_16"
 
 def get_db_connection():
@@ -972,7 +972,7 @@ def remove_games_menu(curs, conn, collection_id):
 
 
 
-
+# "comments"
 
 def search_users(curs,conn):
     print("")

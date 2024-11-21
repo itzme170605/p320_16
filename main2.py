@@ -632,7 +632,8 @@ def homepage(conn, curs):
             6 - Follow/Unfollow users by id
             7 - rate a video game
             8 - Play game
-            9 - Exit
+            9 - Get game recommendations
+            10 - Exit
         ''')
         
         choice = input("->||")
@@ -696,6 +697,9 @@ WHERE userid = %s AND gameid = %s;
         elif choice == '8':
             mark_as_played(USER_DETAILS[0])
         elif choice == '9':
+            recommended_games = recommendation_system(USER_DETAILS[0])
+            print(recommended_games)
+        elif choice == '10':
             print("Exiting...")
             USER_STATE = -1
             break

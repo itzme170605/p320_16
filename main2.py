@@ -4,7 +4,7 @@ import random
 from datetime import datetime, timedelta
 import os
 from decimal import Decimal
-
+import bcrypt  # Install using `pip install bcrypt`
 
 USER_STATE = 0
 USER_DETAILS = ()
@@ -708,25 +708,125 @@ WHERE userid = %s AND gameid = %s;
 
 
 
+# def view_profile(curs, conn):
+#     global USER_DETAILS
+#     try:
+#         curs.execute("SELECT userid, fname, lname, dob, creationdate, password, username FROM users WHERE userid = %s", (USER_DETAILS[0],))
+#         user_details = curs.fetchone()
+        
+#         if user_details:
+#             # Print formatted output
+#             print(f"User ID: {user_details[0]}")
+#             print(f"First Name: {user_details[1]}")
+#             print(f"Last Name: {user_details[2]}")
+#             print(f"Date of Birth: {user_details[3]}")
+#             print(f"Creation Date: {user_details[4]}")
+#             print(f"Username: {user_details[6]}")
+#             # Note: Password should not be printed for security reasons
+#         else:
+#             print("No user found with the specified ID.")
+#     except Exception as e:
+#         print(f"Error fetching profile: {e}")
+
 def view_profile(curs, conn):
     global USER_DETAILS
     try:
-        curs.execute("SELECT userid, fname, lname, dob, creationdate, password, username FROM users WHERE userid = %s", (USER_DETAILS[0],))
+        # Fetch user details
+        curs.execute("""
+            SELECT userid, fname, lname, dob, creationdate, username 
+            FROM users 
+            WHERE userid = %s
+        """, (USER_DETAILS[0],))
         user_details = curs.fetchone()
         
         if user_details:
-            # Print formatted output
+            # Print user information
             print(f"User ID: {user_details[0]}")
             print(f"First Name: {user_details[1]}")
             print(f"Last Name: {user_details[2]}")
             print(f"Date of Birth: {user_details[3]}")
             print(f"Creation Date: {user_details[4]}")
-            print(f"Username: {user_details[6]}")
-            # Note: Password should not be printed for security reasons
+            print(f"Username: {user_details[5]}")
+            
+            # Fetch number of collections
+            curs.execute("""
+                SELECT COUNT(*) 
+                FROM collection 
+                WHERE userid = %s
+            """, (USER_DETAILS[0],))
+            num_collections = curs.fetchone()[0]
+            print(f"Number of Collections: {num_collections}")
+
+            # Fetch number of users followed by this user
+            curs.execute("""
+                SELECT COUNT(*) 
+                FROM followers 
+                WHERE follower_uid = %s
+            """, (USER_DETAILS[0],))
+            num_followees = curs.fetchone()[0]
+            print(f"Following: {num_followees}")
+
+            # Fetch number of followers for this user
+            curs.execute("""
+                SELECT COUNT(*) 
+                FROM followers 
+                WHERE followee_uid = %s
+            """, (USER_DETAILS[0],))
+            num_followers = curs.fetchone()[0]
+            print(f"Followers: {num_followers}")
+
+            # Choose ranking criterion
+            print("\nTop 10 Video Games Options:")
+            print("1. By Rating")
+            print("2. By Playtime")
+            choice = input("Enter your choice (1 or 2): ").strip()
+
+            if choice == "1":
+                # Fetch top 10 video games by rating
+                curs.execute("""
+                    SELECT vg.name, uovg.rating
+                    FROM user_owns_video_games uovg
+                    JOIN video_games vg ON uovg.gameid = vg.gameid
+                    WHERE uovg.userid = %s
+                    ORDER BY uovg.rating DESC
+                    LIMIT 10
+                """, (USER_DETAILS[0],))
+                top_games = curs.fetchall()
+
+                print("\nTop 10 Video Games (by Rating):")
+                if top_games:
+                    for idx, (game_name, rating) in enumerate(top_games, start=1):
+                        print(f"{idx}. {game_name} - Rating: {rating}/10")
+                else:
+                    print("No rated games found.")
+
+            elif choice == "2":
+                # Fetch top 10 video games by playtime
+                curs.execute("""
+                    SELECT vg.name, SUM(EXTRACT(EPOCH FROM (upvg.end_time - upvg.start_time))) AS total_playtime
+                    FROM user_plays_video_games upvg
+                    JOIN video_games vg ON upvg.gameid = vg.gameid
+                    WHERE upvg.userid = %s
+                    GROUP BY vg.name
+                    ORDER BY total_playtime DESC
+                    LIMIT 10
+                """, (USER_DETAILS[0],))
+                top_games = curs.fetchall()
+
+                print("\nTop 10 Video Games (by Playtime):")
+                if top_games:
+                    for idx, (game_name, playtime) in enumerate(top_games, start=1):
+                        hours = playtime // 3600
+                        minutes = (playtime % 3600) // 60
+                        print(f"{idx}. {game_name} - {hours}h {minutes}m")
+                else:
+                    print("No games played yet.")
+
         else:
             print("No user found with the specified ID.")
     except Exception as e:
         print(f"Error fetching profile: {e}")
+
 
 
 
@@ -1077,6 +1177,79 @@ def remove_games_menu(curs, conn, collection_id):
 def search_users(curs,conn):
     print("")
 
+# def login(conn, curs):
+#     global USER_STATE, USER_DETAILS
+#     while True:
+#         print('''Welcome! To proceed choose one of the following:
+#                 1 - Login (for existing users)
+#                 2 - Sign up
+#                 3 - Quit
+#             ''')
+#         try:
+#             x = int(input("->|| "))
+#         except ValueError:
+#             print("Invalid input. Please enter a number.")
+#             continue
+        
+#         if x == 1:
+#             os.system('cls')
+#             print("Login")
+#             uname = input("Username: ")
+#             password = input("Password: ")
+#             print("Logging you in..............")
+            
+#             # Parameterized query to prevent SQL injection
+#             query = "SELECT * FROM users WHERE username = %s AND password = %s;"
+#             curs.execute(query, (uname, password))
+#             data = curs.fetchone()
+#             if data:
+#                 print("Login successful!")
+#                 USER_DETAILS = data
+#                 curs.execute("INSERT INTO user_log(userid, lasttimelogged) VALUES(%s,%s);",(USER_DETAILS[0],datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")))
+#                 USER_STATE = 2
+#                 conn.commit()
+#                 return USER_STATE
+#             else:
+#                 print("Invalid username or password. Try again!")
+                
+#         elif x == 2:
+#             os.system('cls')
+#             print("Sign up:")
+#             fname = input("First name: ")
+#             lname = input("Last name: ")
+#             uname = input("Username: ")
+#             passwd = input("Password: ")
+#             dob = input("DOB (YYYY-MM-DD): ")
+#             uid = genereate_unique_user_id()
+#             creation_date =  datetime.now().strftime("%Y-%m-%d")
+#             query = "SELECT * FROM users WHERE username = %s;"
+#             curs.execute(query, (uname,))
+            
+#             if curs.fetchone():
+#                 print("Username already taken. Try again!")
+#             else:
+#                 signup_query = """
+#                     INSERT INTO users (userid, fname, lname, dob, creationdate, password, username) 
+#                     VALUES (%s, %s, %s, %s, %s, %s, %s);
+#                 """
+#                 curs.execute(signup_query, (uid,fname, lname, dob, creation_date, passwd, uname))
+#                 print("Signed Up! You can go back and sign in.")
+#                 conn.commit()
+#                 USER_STATE = 0
+#                 return USER_STATE
+
+#         elif x == 3:
+#             os.system('cls')
+#             print("Exiting...")
+#             USER_STATE = -1
+#             return USER_STATE
+        
+#         else:
+#             os.system('cls')
+#             print("Invalid choice. Please try again.")
+
+
+
 def login(conn, curs):
     global USER_STATE, USER_DETAILS
     while True:
@@ -1092,39 +1265,45 @@ def login(conn, curs):
             continue
         
         if x == 1:
-            os.system('cls')
             print("Login")
             uname = input("Username: ")
-            password = input("Password: ")
+            password = input("Password: ").encode('utf-8')
             print("Logging you in..............")
             
             # Parameterized query to prevent SQL injection
-            query = "SELECT * FROM users WHERE username = %s AND password = %s;"
-            curs.execute(query, (uname, password))
+            query = "SELECT * FROM users WHERE username = %s;"
+            curs.execute(query, (uname,))
             data = curs.fetchone()
+
             if data:
-                print("Login successful!")
-                USER_DETAILS = data
-                curs.execute("INSERT INTO user_log(userid, lasttimelogged) VALUES(%s,%s);",(USER_DETAILS[0],datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")))
-                USER_STATE = 2
-                conn.commit()
-                return USER_STATE
+                stored_password = data[5].encode('utf-8')  # Assuming `password` is at index 5
+                if bcrypt.checkpw(password, stored_password):
+                    print("Login successful!")
+                    USER_DETAILS = data
+                    curs.execute("INSERT INTO user_log(userid, lasttimelogged) VALUES(%s,%s);",
+                                (USER_DETAILS[0], datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")))
+                    USER_STATE = 2
+                    conn.commit()
+                    return USER_STATE
+                else:
+                    print("Invalid password. Try again!")
             else:
-                print("Invalid username or password. Try again!")
+                print("Invalid username. Try again!")
                 
         elif x == 2:
-            os.system('cls')
             print("Sign up:")
             fname = input("First name: ")
             lname = input("Last name: ")
             uname = input("Username: ")
-            passwd = input("Password: ")
+            passwd = input("Password: ").encode('utf-8')
+            hashed_password = bcrypt.hashpw(passwd, bcrypt.gensalt())
             dob = input("DOB (YYYY-MM-DD): ")
             uid = genereate_unique_user_id()
-            creation_date =  datetime.now().strftime("%Y-%m-%d")
+            creation_date = datetime.now().strftime("%Y-%m-%d")
+
+            # Check if username is already taken
             query = "SELECT * FROM users WHERE username = %s;"
             curs.execute(query, (uname,))
-            
             if curs.fetchone():
                 print("Username already taken. Try again!")
             else:
@@ -1132,26 +1311,75 @@ def login(conn, curs):
                     INSERT INTO users (userid, fname, lname, dob, creationdate, password, username) 
                     VALUES (%s, %s, %s, %s, %s, %s, %s);
                 """
-                curs.execute(signup_query, (uid,fname, lname, dob, creation_date, passwd, uname))
+                curs.execute(signup_query, (uid, fname, lname, dob, creation_date, hashed_password.decode('utf-8'), uname))
                 print("Signed Up! You can go back and sign in.")
                 conn.commit()
                 USER_STATE = 0
                 return USER_STATE
 
         elif x == 3:
-            os.system('cls')
             print("Exiting...")
             USER_STATE = -1
             return USER_STATE
         
         else:
-            os.system('cls')
             print("Invalid choice. Please try again.")
+
+def hash_and_update_passwords(conn, curs):
+    """
+    Hash plaintext passwords in the users table and update them with the hashed versions.
+    
+    Parameters:
+    - conn: Active database connection object.
+    - curs: Cursor object for the database connection.
+    """
+    try:
+        # Step 1: Fetch all users
+        curs.execute("SELECT userid, password FROM users;")
+        users = curs.fetchall()  # List of tuples [(userid, password), ...]
+
+        if not users:
+            print("No users found in the table.")
+            return
+        
+        print("Hashing passwords and updating the database...")
+        
+        # Step 2: Iterate through each user and hash their password
+        for userid, plaintext_password in users:
+            if plaintext_password is None:
+                print(f"Skipping user {userid}: No password found.")
+                continue
+            
+            # Hash the plaintext password
+            hashed_password = bcrypt.hashpw(plaintext_password.encode('utf-8'), bcrypt.gensalt())
+
+            # Step 3: Update the user's password in the database
+            update_query = """
+                UPDATE users 
+                SET password = %s 
+                WHERE userid = %s;
+            """
+            curs.execute(update_query, (hashed_password.decode('utf-8'), userid))
+
+        # Commit the changes to the database
+        conn.commit()
+        print("All passwords have been hashed and updated successfully.")
+    
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        conn.rollback()
+
+# Example Usage
+# Ensure `conn` and `curs` are properly initialized with your database connection
+# hash_and_update_passwords(conn, curs)
+
 
 def main():
     global USER_STATE
     conn, server = get_db_connection()
     curs = conn.cursor()
+
+    # hash_and_update_passwords(conn,curs)
 
     while True:
         if USER_STATE == -1:
